@@ -1,0 +1,32 @@
+{
+  "name": "mcp-google-travels",
+  "version": "1.0.0",
+  "description": "MCP Server for searching flights, hotels, and vacation rentals",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "mcp-google-travels": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "google",
+    "travels",
+    "flights",
+    "hotels",
+    "vacation-rentals"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}
