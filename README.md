@@ -87,6 +87,41 @@ Run the test script to verify all tools are working:
 node dist/test.js
 ```
 
+#### Using MCP Inspector
+
+The MCP Inspector is a debugging tool that allows you to interactively test your MCP server. To use it:
+
+1. **Install the MCP Inspector** (if not already installed):
+   ```bash
+   npx @modelcontextprotocol/inspector
+   ```
+
+2. **Build your server**:
+   ```bash
+   npm run build
+   ```
+
+3. **Start the Inspector**:
+   ```bash
+   npx @modelcontextprotocol/inspector node dist/index.js
+   ```
+
+4. **Open the Inspector UI** in your browser at the URL shown in the terminal (typically http://localhost:5173)
+
+5. **Test the tools** interactively:
+   - View all available tools in the left panel
+   - Click on any tool to see its schema and parameters
+   - Fill in the parameters and execute the tool
+   - See the results in real-time
+
+This is particularly useful for:
+- Testing individual tools during development
+- Debugging tool responses
+- Validating parameter schemas
+- Understanding the tool capabilities before integration
+
+
+
 ## Tool Examples
 
 ### Search Flights
