@@ -3,9 +3,49 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
   ListToolsRequestSchema,
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
+import dotenv from "dotenv";
+import { simplifyFlightResponse, simplifyHotelResponse } from "./response-simplifier.js";
+
+// Load environment variables
+dotenv.config();
+
+const SERPAPI_KEY = process.env.SERPAPI_API_KEY;
+
+if (!SERPAPI_KEY) {
+  console.error("Error: SERPAPI_API_KEY environment variable is required");
+  console.error("Please set it in your .env file or pass it via environment variables");
+  process.exit(1);
+}
+
+// Helper function to map cabin class to SerpAPI travel class code
+function mapCabinClass(cabinClass: string): string {
+  const classMap: Record<string, string> = {
+    economy: "1",
+    premium_economy: "2",
+    business: "3",
+    first: "4",
+  };
+  return classMap[cabinClass] || "1";
+}
+
+// Airport list for resources
+const AIRPORTS = [
+  { id: "JFK", name: "John F. Kennedy International", city: "New York", country: "USA" },
+  { id: "LAX", name: "Los Angeles International", city: "Los Angeles", country: "USA" },
+  { id: "ORD", name: "O'Hare International", city: "Chicago", country: "USA" },
+  { id: "SFO", name: "San Francisco International", city: "San Francisco", country: "USA" },
+  { id: "MIA", name: "Miami International", city: "Miami", country: "USA" },
+  { id: "LHR", name: "Heathrow", city: "London", country: "UK" },
+  { id: "CDG", name: "Charles de Gaulle", city: "Paris", country: "France" },
+  { id: "DXB", name: "Dubai International", city: "Dubai", country: "UAE" },
+  { id: "NRT", name: "Narita International", city: "Tokyo", country: "Japan" },
+  { id: "SYD", name: "Sydney Airport", city: "Sydney", country: "Australia" },
+];
 
 // Define tool schemas
 const TOOLS: Tool[] = [
@@ -86,20 +126,6 @@ const TOOLS: Tool[] = [
     }
   },
   {
-    name: "get_flight_details",
-    description: "Get detailed flight information. Retrieve detailed information about a specific flight including schedule, aircraft, amenities, and pricing.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        flightId: {
-          type: "string",
-          description: "Unique flight identifier from search results"
-        }
-      },
-      required: ["flightId"]
-    }
-  },
-  {
     name: "search_hotels",
     description: "Hotel search. Search for hotels in a specific location with optional filters like dates, guests, amenities, and price range.",
     inputSchema: {
@@ -150,13 +176,13 @@ const TOOLS: Tool[] = [
   },
   {
     name: "get_hotel_details",
-    description: "Get detailed hotel information. Retrieve detailed information about a specific hotel including amenities, photos, reviews, and room options.",
+    description: "Get comprehensive hotel details. Fetches full hotel information including complete description, all amenities, multiple pricing options from different booking sites, room types, images, policies, and nearby places. Use the propertyToken (hotelId) from search_hotels results.",
     inputSchema: {
       type: "object",
       properties: {
         hotelId: {
           type: "string",
-          description: "Unique hotel identifier from search results"
+          description: "Property token from search results (the 'propertyToken' or 'hotelId' field)"
         }
       },
       required: ["hotelId"]
@@ -218,483 +244,204 @@ const TOOLS: Tool[] = [
   }
 ];
 
-// Mock data generators
-function searchFlights(args: any) {
+// SerpAPI functions
+async function searchFlights(args: any) {
   const { origin, destination, departureDate, returnDate, passengers = 1, cabinClass = "economy" } = args;
   
-  // Generate mock flight results
-  const mockFlights = [
-    {
-      flightId: `FL-${origin}-${destination}-001`,
-      airline: "United Airlines",
-      flightNumber: "UA 1234",
-      origin,
-      destination,
-      departureTime: `${departureDate}T08:00:00`,
-      arrivalTime: `${departureDate}T11:30:00`,
-      duration: "3h 30m",
-      stops: 0,
-      cabinClass,
-      price: passengers * (cabinClass === "economy" ? 250 : cabinClass === "business" ? 850 : 450),
-      currency: "USD",
-      availableSeats: 12
-    },
-    {
-      flightId: `FL-${origin}-${destination}-002`,
-      airline: "Delta Air Lines",
-      flightNumber: "DL 5678",
-      origin,
-      destination,
-      departureTime: `${departureDate}T14:15:00`,
-      arrivalTime: `${departureDate}T17:45:00`,
-      duration: "3h 30m",
-      stops: 0,
-      cabinClass,
-      price: passengers * (cabinClass === "economy" ? 280 : cabinClass === "business" ? 900 : 480),
-      currency: "USD",
-      availableSeats: 8
-    },
-    {
-      flightId: `FL-${origin}-${destination}-003`,
-      airline: "American Airlines",
-      flightNumber: "AA 9012",
-      origin,
-      destination,
-      departureTime: `${departureDate}T18:30:00`,
-      arrivalTime: `${departureDate}T22:00:00`,
-      duration: "3h 30m",
-      stops: 0,
-      cabinClass,
-      price: passengers * (cabinClass === "economy" ? 230 : cabinClass === "business" ? 820 : 430),
-      currency: "USD",
-      availableSeats: 15
-    }
-  ];
+  const params = new URLSearchParams({
+    engine: "google_flights",
+    departure_id: origin,
+    arrival_id: destination,
+    outbound_date: departureDate,
+    adults: passengers.toString(),
+    travel_class: mapCabinClass(cabinClass),
+    type: returnDate ? "1" : "2",
+    currency: "USD",
+    hl: "en",
+    api_key: SERPAPI_KEY!,
+  });
 
-  return {
-    searchCriteria: {
-      origin,
-      destination,
-      departureDate,
-      returnDate,
-      passengers,
-      cabinClass
-    },
-    totalResults: mockFlights.length,
-    flights: mockFlights,
-    note: "This is a mock flight search. Real integration would connect to Google Flights API or similar service."
-  };
+  if (returnDate) {
+    params.append("return_date", returnDate);
+  }
+
+  const response = await fetch(`https://serpapi.com/search?${params}`);
+  
+  if (!response.ok) {
+    throw new Error(`SerpAPI request failed: ${response.status} ${response.statusText}`);
+  }
+  
+  const rawData = await response.json();
+  return simplifyFlightResponse(rawData);
 }
 
-function searchMultiCity(args: any) {
+async function searchMultiCity(args: any) {
   const { flights, passengers = 1, cabinClass = "economy" } = args;
   
-  const mockResults = flights.map((leg: any, index: number) => ({
-    legNumber: index + 1,
-    flightId: `FL-MC-${leg.origin}-${leg.destination}-${index + 1}`,
-    airline: ["United Airlines", "Delta Air Lines", "American Airlines"][index % 3],
-    flightNumber: `UA ${1000 + index}`,
-    origin: leg.origin,
-    destination: leg.destination,
-    departureTime: `${leg.departureDate}T10:00:00`,
-    arrivalTime: `${leg.departureDate}T14:00:00`,
-    duration: "4h 00m",
-    stops: 0,
-    cabinClass,
-    price: passengers * (cabinClass === "economy" ? 300 : cabinClass === "business" ? 950 : 520),
-    currency: "USD",
-    availableSeats: 10
+  const multiCityData = flights.map((leg: any) => ({
+    departure_id: leg.origin,
+    arrival_id: leg.destination,
+    date: leg.departureDate,
   }));
 
-  const totalPrice = mockResults.reduce((sum: number, flight: any) => sum + flight.price, 0);
-
-  return {
-    searchCriteria: {
-      flights,
-      passengers,
-      cabinClass
-    },
-    totalLegs: mockResults.length,
-    totalPrice,
+  const params = new URLSearchParams({
+    engine: "google_flights",
+    type: "3",
+    adults: passengers.toString(),
+    travel_class: mapCabinClass(cabinClass),
     currency: "USD",
-    legs: mockResults,
-    note: "This is a mock multi-city flight search. Real integration would connect to Google Flights API or similar service."
-  };
-}
+    hl: "en",
+    api_key: SERPAPI_KEY!,
+  });
 
-function getFlightDetails(args: any) {
-  const { flightId } = args;
+  params.append("multi_city_json", JSON.stringify(multiCityData));
+
+  const response = await fetch(`https://serpapi.com/search?${params}`);
   
-  return {
-    flightId,
-    airline: "United Airlines",
-    flightNumber: "UA 1234",
-    aircraft: {
-      model: "Boeing 737-900",
-      manufacturer: "Boeing",
-      seatingCapacity: 179
-    },
-    origin: {
-      airport: "San Francisco International Airport",
-      code: "SFO",
-      terminal: "3",
-      gate: "B7"
-    },
-    destination: {
-      airport: "Los Angeles International Airport",
-      code: "LAX",
-      terminal: "7",
-      gate: "C5"
-    },
-    schedule: {
-      departureTime: "2024-01-15T08:00:00",
-      arrivalTime: "2024-01-15T11:30:00",
-      duration: "3h 30m",
-      timezone: {
-        departure: "PST",
-        arrival: "PST"
-      }
-    },
-    stops: 0,
-    cabinClass: "economy",
-    pricing: {
-      basePrice: 250,
-      taxes: 45,
-      fees: 15,
-      totalPrice: 310,
-      currency: "USD"
-    },
-    amenities: [
-      "WiFi available (paid)",
-      "In-flight entertainment",
-      "Power outlets",
-      "Snacks and beverages",
-      "Checked baggage (1 bag included)"
-    ],
-    baggagePolicy: {
-      carryOn: "1 personal item + 1 carry-on bag",
-      checked: "1 checked bag up to 50 lbs included",
-      additionalFee: 35
-    },
-    seatMap: "Available during booking",
-    note: "This is mock flight detail data. Real integration would connect to Google Flights API or similar service."
-  };
+  if (!response.ok) {
+    throw new Error(`SerpAPI request failed: ${response.status} ${response.statusText}`);
+  }
+  
+  const rawData = await response.json();
+  return simplifyFlightResponse(rawData);
 }
 
-function searchHotels(args: any) {
+async function searchHotels(args: any) {
   const { location, checkIn, checkOut, guests = 2, rooms = 1, minPrice, maxPrice, starRating, amenities } = args;
   
-  const mockHotels = [
-    {
-      hotelId: `HTL-${location.replace(/\s+/g, '-')}-001`,
-      name: "Grand Plaza Hotel",
-      starRating: 4,
-      location: {
-        address: `123 Main Street, ${location}`,
-        neighborhood: "Downtown",
-        coordinates: { lat: 37.7749, lng: -122.4194 }
-      },
-      pricePerNight: 189,
-      totalPrice: 189 * calculateNights(checkIn, checkOut) * rooms,
-      currency: "USD",
-      images: ["https://example.com/hotel1-img1.jpg"],
-      amenities: ["WiFi", "Pool", "Gym", "Restaurant", "Parking"],
-      rating: {
-        score: 4.3,
-        reviewCount: 1247
-      },
-      availableRooms: 5,
-      roomType: "Deluxe King Room"
-    },
-    {
-      hotelId: `HTL-${location.replace(/\s+/g, '-')}-002`,
-      name: "Seaside Resort & Spa",
-      starRating: 5,
-      location: {
-        address: `456 Ocean Drive, ${location}`,
-        neighborhood: "Beachfront",
-        coordinates: { lat: 37.7849, lng: -122.4094 }
-      },
-      pricePerNight: 349,
-      totalPrice: 349 * calculateNights(checkIn, checkOut) * rooms,
-      currency: "USD",
-      images: ["https://example.com/hotel2-img1.jpg"],
-      amenities: ["WiFi", "Pool", "Spa", "Beach Access", "Restaurant", "Bar", "Gym", "Parking"],
-      rating: {
-        score: 4.7,
-        reviewCount: 892
-      },
-      availableRooms: 3,
-      roomType: "Ocean View Suite"
-    },
-    {
-      hotelId: `HTL-${location.replace(/\s+/g, '-')}-003`,
-      name: "Budget Inn Express",
-      starRating: 3,
-      location: {
-        address: `789 Budget Lane, ${location}`,
-        neighborhood: "Airport Area",
-        coordinates: { lat: 37.7649, lng: -122.4294 }
-      },
-      pricePerNight: 89,
-      totalPrice: 89 * calculateNights(checkIn, checkOut) * rooms,
-      currency: "USD",
-      images: ["https://example.com/hotel3-img1.jpg"],
-      amenities: ["WiFi", "Parking", "Breakfast"],
-      rating: {
-        score: 3.8,
-        reviewCount: 543
-      },
-      availableRooms: 12,
-      roomType: "Standard Queen Room"
-    }
-  ];
+  const params = new URLSearchParams({
+    engine: "google_hotels",
+    q: location,
+    check_in_date: checkIn,
+    check_out_date: checkOut,
+    adults: guests.toString(),
+    currency: "USD",
+    hl: "en",
+    api_key: SERPAPI_KEY!,
+  });
 
-  // Apply filters
-  let filteredHotels = mockHotels;
-  if (minPrice) {
-    filteredHotels = filteredHotels.filter(h => h.pricePerNight >= minPrice);
-  }
-  if (maxPrice) {
-    filteredHotels = filteredHotels.filter(h => h.pricePerNight <= maxPrice);
-  }
+  if (minPrice) params.append("min_price", minPrice.toString());
+  if (maxPrice) params.append("max_price", maxPrice.toString());
   if (starRating) {
-    filteredHotels = filteredHotels.filter(h => h.starRating >= starRating);
+    const classes = [];
+    for (let i = starRating; i <= 5; i++) classes.push(i.toString());
+    params.append("hotel_class", classes.join(","));
   }
 
-  return {
-    searchCriteria: {
-      location,
-      checkIn,
-      checkOut,
-      guests,
-      rooms,
-      nights: calculateNights(checkIn, checkOut)
-    },
-    totalResults: filteredHotels.length,
-    hotels: filteredHotels,
-    note: "This is a mock hotel search. Real integration would connect to Google Hotels API or similar service."
-  };
+  const response = await fetch(`https://serpapi.com/search?${params}`);
+  
+  if (!response.ok) {
+    throw new Error(`SerpAPI request failed: ${response.status} ${response.statusText}`);
+  }
+  
+  const rawData = await response.json();
+  return simplifyHotelResponse(rawData);
 }
 
-function getHotelDetails(args: any) {
+async function getHotelDetails(args: any) {
   const { hotelId } = args;
   
-  return {
-    hotelId,
-    name: "Grand Plaza Hotel",
-    starRating: 4,
-    location: {
-      address: "123 Main Street, San Francisco, CA 94102",
-      neighborhood: "Downtown",
-      coordinates: { lat: 37.7749, lng: -122.4194 },
-      nearbyAttractions: [
-        { name: "Union Square", distance: "0.3 miles" },
-        { name: "Cable Car Museum", distance: "0.5 miles" },
-        { name: "Chinatown", distance: "0.7 miles" }
-      ]
-    },
-    description: "A luxurious downtown hotel offering modern amenities and exceptional service. Perfect for both business and leisure travelers.",
-    images: [
-      "https://example.com/hotel-img1.jpg",
-      "https://example.com/hotel-img2.jpg",
-      "https://example.com/hotel-img3.jpg"
-    ],
-    amenities: {
-      property: ["WiFi", "Pool", "Gym", "Spa", "Restaurant", "Bar", "Room Service", "Concierge", "Valet Parking"],
-      room: ["Air Conditioning", "TV", "Mini Bar", "Coffee Maker", "Safe", "Iron"]
-    },
-    roomTypes: [
-      {
-        type: "Standard King",
-        pricePerNight: 189,
-        bedding: "1 King Bed",
-        maxOccupancy: 2,
-        size: "300 sq ft",
-        available: 5
-      },
-      {
-        type: "Deluxe Suite",
-        pricePerNight: 349,
-        bedding: "1 King Bed + Sofa Bed",
-        maxOccupancy: 4,
-        size: "550 sq ft",
-        available: 2
-      }
-    ],
-    reviews: {
-      overallRating: 4.3,
-      totalReviews: 1247,
-      breakdown: {
-        cleanliness: 4.5,
-        service: 4.4,
-        location: 4.7,
-        value: 4.0
-      },
-      recentReviews: [
-        {
-          rating: 5,
-          comment: "Excellent location and friendly staff!",
-          date: "2024-01-10",
-          reviewer: "John D."
-        },
-        {
-          rating: 4,
-          comment: "Great hotel, small rooms but very clean.",
-          date: "2024-01-08",
-          reviewer: "Sarah M."
-        }
-      ]
-    },
-    policies: {
-      checkIn: "3:00 PM",
-      checkOut: "11:00 AM",
-      cancellation: "Free cancellation up to 24 hours before check-in",
-      pets: "Pets allowed (additional fee)",
-      smoking: "Non-smoking property"
-    },
-    contact: {
-      phone: "+1 (415) 555-0123",
-      email: "info@grandplazahotel.com",
-      website: "https://grandplazahotel.com"
-    },
-    note: "This is mock hotel detail data. Real integration would connect to Google Hotels API or similar service."
-  };
-}
-
-function searchVacationRentals(args: any) {
-  const { location, checkIn, checkOut, guests = 2, bedrooms, bathrooms, minPrice, maxPrice, propertyType = "any", amenities } = args;
+  // The hotelId is actually a property_token from search results
+  // SerpAPI supports fetching hotel details using property_token
   
-  const mockRentals = [
-    {
-      rentalId: `VR-${location.replace(/\s+/g, '-')}-001`,
-      title: "Cozy Beach House with Ocean Views",
-      propertyType: "house",
-      location: {
-        address: `Beach Road, ${location}`,
-        neighborhood: "Beachfront",
-        coordinates: { lat: 25.7617, lng: -80.1918 }
-      },
-      bedrooms: 3,
-      bathrooms: 2,
-      maxGuests: 6,
-      pricePerNight: 225,
-      totalPrice: 225 * calculateNights(checkIn, checkOut),
+  if (!hotelId || hotelId.length < 10) {
+    return {
+      error: "Invalid hotelId/property_token",
+      note: "Please provide a valid property_token from search_hotels results.",
+      example: "Use the 'propertyToken' field from hotel search results"
+    };
+  }
+  
+  try {
+    const params = new URLSearchParams({
+      engine: "google_hotels",
+      property_token: hotelId,
       currency: "USD",
-      images: ["https://example.com/rental1-img1.jpg"],
-      amenities: ["WiFi", "Kitchen", "Washer", "Dryer", "AC", "Beach Access", "Parking"],
-      rating: {
-        score: 4.8,
-        reviewCount: 156
-      },
-      host: {
-        name: "Maria S.",
-        memberSince: "2019",
-        responseRate: "100%"
-      },
-      minimumNights: 2
-    },
-    {
-      rentalId: `VR-${location.replace(/\s+/g, '-')}-002`,
-      title: "Modern Downtown Apartment",
-      propertyType: "apartment",
-      location: {
-        address: `City Center, ${location}`,
-        neighborhood: "Downtown",
-        coordinates: { lat: 25.7717, lng: -80.1818 }
-      },
-      bedrooms: 2,
-      bathrooms: 1,
-      maxGuests: 4,
-      pricePerNight: 150,
-      totalPrice: 150 * calculateNights(checkIn, checkOut),
-      currency: "USD",
-      images: ["https://example.com/rental2-img1.jpg"],
-      amenities: ["WiFi", "Kitchen", "Washer", "Dryer", "AC", "Gym", "Parking"],
-      rating: {
-        score: 4.6,
-        reviewCount: 89
-      },
-      host: {
-        name: "John D.",
-        memberSince: "2020",
-        responseRate: "95%"
-      },
-      minimumNights: 1
-    },
-    {
-      rentalId: `VR-${location.replace(/\s+/g, '-')}-003`,
-      title: "Luxury Villa with Private Pool",
-      propertyType: "villa",
-      location: {
-        address: `Palm Estate, ${location}`,
-        neighborhood: "Exclusive Suburb",
-        coordinates: { lat: 25.7817, lng: -80.1718 }
-      },
-      bedrooms: 5,
-      bathrooms: 4,
-      maxGuests: 10,
-      pricePerNight: 550,
-      totalPrice: 550 * calculateNights(checkIn, checkOut),
-      currency: "USD",
-      images: ["https://example.com/rental3-img1.jpg"],
-      amenities: ["WiFi", "Kitchen", "Washer", "Dryer", "AC", "Pool", "Hot Tub", "BBQ", "Parking"],
-      rating: {
-        score: 4.9,
-        reviewCount: 234
-      },
-      host: {
-        name: "David & Lisa",
-        memberSince: "2018",
-        responseRate: "100%",
-        superhost: true
-      },
-      minimumNights: 3
+      hl: "en",
+      api_key: SERPAPI_KEY!,
+    });
+
+    const response = await fetch(`https://serpapi.com/search?${params}`);
+    
+    if (!response.ok) {
+      throw new Error(`SerpAPI request failed: ${response.status} ${response.statusText}`);
     }
-  ];
-
-  // Apply filters
-  let filteredRentals = mockRentals;
-  if (bedrooms) {
-    filteredRentals = filteredRentals.filter(r => r.bedrooms >= bedrooms);
+    
+    const rawData = await response.json();
+    
+    // Simplify the detailed response to include key information
+    return {
+      hotelId,
+      name: rawData.name || "Unknown",
+      type: rawData.type || "hotel",
+      description: rawData.description,
+      checkIn: rawData.check_in_time,
+      checkOut: rawData.check_out_time,
+      rating: rawData.overall_rating,
+      reviews: rawData.reviews,
+      location: {
+        address: rawData.address,
+        neighborhood: rawData.neighborhood,
+        coordinates: rawData.gps_coordinates
+      },
+      prices: rawData.rates?.map((rate: any) => ({
+        source: rate.source,
+        rate: rate.rate,
+        total: rate.total
+      }))?.slice(0, 5), // Top 5 booking sources
+      amenities: rawData.amenities?.slice(0, 15), // Top 15 amenities
+      images: rawData.images?.map((img: any) => img.thumbnail || img.link)?.slice(0, 10), // Top 10 images
+      rooms: rawData.rooms?.slice(0, 5), // Top 5 room types
+      policies: {
+        checkIn: rawData.check_in_time,
+        checkOut: rawData.check_out_time,
+        cancellation: rawData.policies?.cancellation,
+        children: rawData.policies?.children
+      },
+      nearbyPlaces: rawData.nearby_places?.slice(0, 5),
+      propertyToken: hotelId
+    };
+  } catch (error) {
+    return {
+      hotelId,
+      error: error instanceof Error ? error.message : String(error),
+      note: "Failed to fetch hotel details. The property_token may be invalid or expired.",
+      suggestion: "Run search_hotels again to get fresh property tokens."
+    };
   }
-  if (bathrooms) {
-    filteredRentals = filteredRentals.filter(r => r.bathrooms >= bathrooms);
-  }
-  if (minPrice) {
-    filteredRentals = filteredRentals.filter(r => r.pricePerNight >= minPrice);
-  }
-  if (maxPrice) {
-    filteredRentals = filteredRentals.filter(r => r.pricePerNight <= maxPrice);
-  }
-  if (propertyType !== "any") {
-    filteredRentals = filteredRentals.filter(r => r.propertyType === propertyType);
-  }
-
-  return {
-    searchCriteria: {
-      location,
-      checkIn,
-      checkOut,
-      guests,
-      nights: calculateNights(checkIn, checkOut),
-      bedrooms,
-      bathrooms,
-      propertyType
-    },
-    totalResults: filteredRentals.length,
-    rentals: filteredRentals,
-    note: "This is a mock vacation rental search. Real integration would connect to vacation rental APIs or services."
-  };
 }
 
-function calculateNights(checkIn: string, checkOut: string): number {
-  const start = new Date(checkIn);
-  const end = new Date(checkOut);
-  const diffTime = end.getTime() - start.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  // Return at least 1 night, even for invalid ranges (mock data handles this gracefully)
-  return Math.max(1, diffDays);
+async function searchVacationRentals(args: any) {
+  const { location, checkIn, checkOut, guests = 2, bedrooms, bathrooms, minPrice, maxPrice, propertyType, amenities } = args;
+  
+  const params = new URLSearchParams({
+    engine: "google_hotels",
+    q: `${location} vacation rental`,
+    check_in_date: checkIn,
+    check_out_date: checkOut,
+    adults: guests.toString(),
+    currency: "USD",
+    hl: "en",
+    api_key: SERPAPI_KEY!,
+  });
+
+  if (minPrice) params.append("min_price", minPrice.toString());
+  if (maxPrice) params.append("max_price", maxPrice.toString());
+
+  const response = await fetch(`https://serpapi.com/search?${params}`);
+  
+  if (!response.ok) {
+    throw new Error(`SerpAPI request failed: ${response.status} ${response.statusText}`);
+  }
+  
+  const rawData = await response.json();
+  const simplified = simplifyHotelResponse(rawData);
+  
+  return {
+    ...simplified,
+    search_note: "Vacation rental results from Google Hotels. Look for properties with type='vacation rental' or 'apartment'.",
+    requested_filters: { bedrooms, bathrooms, propertyType, amenities }
+  };
 }
 
 // Main server setup
@@ -706,9 +453,42 @@ const server = new Server(
   {
     capabilities: {
       tools: {},
+      resources: {},
     },
   }
 );
+
+// Register resource handlers
+server.setRequestHandler(ListResourcesRequestSchema, async () => {
+  return {
+    resources: [
+      {
+        uri: "mcp://airports",
+        name: "Airport Codes",
+        description: "List of common airport codes and names",
+        mimeType: "application/json",
+      },
+    ],
+  };
+});
+
+server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  const { uri } = request.params;
+
+  if (uri === "mcp://airports") {
+    return {
+      contents: [
+        {
+          uri,
+          mimeType: "application/json",
+          text: JSON.stringify(AIRPORTS, null, 2),
+        },
+      ],
+    };
+  }
+
+  throw new Error(`Unknown resource: ${uri}`);
+});
 
 // Register tool handlers
 server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -719,70 +499,41 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   try {
+    let result;
+    
     switch (name) {
       case "search_flights":
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(searchFlights(args), null, 2),
-            },
-          ],
-        };
+        result = await searchFlights(args);
+        break;
 
       case "search_multi_city":
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(searchMultiCity(args), null, 2),
-            },
-          ],
-        };
-
-      case "get_flight_details":
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(getFlightDetails(args), null, 2),
-            },
-          ],
-        };
+        result = await searchMultiCity(args);
+        break;
 
       case "search_hotels":
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(searchHotels(args), null, 2),
-            },
-          ],
-        };
+        result = await searchHotels(args);
+        break;
 
       case "get_hotel_details":
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(getHotelDetails(args), null, 2),
-            },
-          ],
-        };
+        result = await getHotelDetails(args);
+        break;
 
       case "search_vacation_rentals":
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(searchVacationRentals(args), null, 2),
-            },
-          ],
-        };
+        result = await searchVacationRentals(args);
+        break;
 
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(result, null, 2),
+        },
+      ],
+    };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     return {

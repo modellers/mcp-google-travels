@@ -1,23 +1,65 @@
 # MCP Google Travels
 
-A Model Context Protocol (MCP) server that provides tools for searching flights, hotels, and vacation rentals. This server enables AI assistants to help users browse travel options without making actual bookings.
+A Model Context Protocol (MCP) server that provides tools for searching flights, hotels, and vacation rentals using Google's travel data via SerpAPI. This server enables AI assistants to help users browse real travel options without making actual bookings.
 
 ## Features
 
 This MCP server provides the following tools:
 
-- **search_flights** - Browse flight options between airports with filters for dates, passengers, and cabin class
+### Flight Search Tools
+- **search_flights** - One-way or round-trip flight search with real pricing from Google Flights
 - **search_multi_city** - Multi-city flight search for trips with multiple destinations
-- **get_flight_details** - Get detailed information about a specific flight
-- **search_hotels** - Search for hotels with filters for location, dates, guests, and amenities
+
+### Hotel Search Tools
+- **search_hotels** - Search hotels with filters for location, dates, guests, and amenities
 - **get_hotel_details** - Get detailed hotel information including reviews and room options
+
+### Vacation Rental Tools
 - **search_vacation_rentals** - Search for vacation rentals (homes, apartments, villas) with various filters
+
+### Resources
+- **mcp://airports** - Static list of major airports with IATA codes
+
+## Data Source
+
+This server uses **SerpAPI** to fetch real-time data from Google Flights and Google Hotels. SerpAPI provides:
+- Live flight prices and availability
+- Hotel search results with reviews and ratings
+- Price insights and trends
+- Comprehensive travel information
 
 ## Installation
 
+### Option 1: From GitHub
+
+Clone the repository and install dependencies:
+
 ```bash
+git clone https://github.com/modellers/mcp-google-travels.git
+cd mcp-google-travels
 npm install
+npm run build
 ```
+
+### Option 2: From npm (if published)
+
+```bash
+npm install -g mcp-google-travels
+```
+
+### Set Up SerpAPI
+
+You'll need a SerpAPI API key to use this server:
+
+1. Sign up at [serpapi.com](https://serpapi.com)
+2. Get your API key from the dashboard
+3. Create a `.env` file in the project root:
+
+```bash
+SERPAPI_API_KEY=your_serpapi_key_here
+```
+
+Or set it as an environment variable in your Claude Desktop configuration (see below).
 
 ## Usage
 
@@ -32,28 +74,40 @@ Add to your Claude Desktop configuration file:
 **MacOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 **Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
 
+**Using the GitHub repository:**
+
 ```json
 {
   "mcpServers": {
     "google-travels": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp-google-travels/dist/index.js"]
+      "args": ["/absolute/path/to/mcp-google-travels/dist/index.js"],
+      "env": {
+        "SERPAPI_API_KEY": "your_serpapi_key_here"
+      }
     }
   }
 }
 ```
 
-Or if installed globally via npm:
+Replace `/absolute/path/to/mcp-google-travels` with the actual path where you cloned the repository.
+
+**If installed globally via npm:**
 
 ```json
 {
   "mcpServers": {
     "google-travels": {
-      "command": "mcp-google-travels"
+      "command": "mcp-google-travels",
+      "env": {
+        "SERPAPI_API_KEY": "your_serpapi_key_here"
+      }
     }
   }
 }
 ```
+
+**Important:** Replace `your_serpapi_key_here` with your actual SerpAPI key.
 
 ### Direct Usage
 
@@ -126,21 +180,33 @@ This is particularly useful for:
 
 ### Search Flights
 
+Search for round-trip flights with real pricing from Google Flights:
+
 ```json
 {
   "name": "search_flights",
   "arguments": {
     "origin": "SFO",
     "destination": "LAX",
-    "departureDate": "2024-03-15",
-    "returnDate": "2024-03-20",
+    "departureDate": "2025-03-15",
+    "returnDate": "2025-03-20",
     "passengers": 2,
     "cabinClass": "economy"
   }
 }
 ```
 
+**Response includes:**
+- Best and alternative flight options
+- Real-time pricing in USD
+- Flight duration and layover information
+- Airline and aircraft details
+- Carbon emissions data
+- Price insights and trends
+
 ### Search Multi-City
+
+Search for multi-leg trips (3+ destinations):
 
 ```json
 {
@@ -150,17 +216,17 @@ This is particularly useful for:
       {
         "origin": "SFO",
         "destination": "NYC",
-        "departureDate": "2024-03-15"
+        "departureDate": "2025-03-15"
       },
       {
         "origin": "NYC",
         "destination": "LON",
-        "departureDate": "2024-03-20"
+        "departureDate": "2025-03-20"
       },
       {
         "origin": "LON",
         "destination": "SFO",
-        "departureDate": "2024-03-25"
+        "departureDate": "2025-03-25"
       }
     ],
     "passengers": 1,
@@ -169,7 +235,15 @@ This is particularly useful for:
 }
 ```
 
+**Response includes:**
+- Combined itinerary pricing
+- Individual leg details
+- Total travel time
+- Layover information
+
 ### Get Flight Details
+
+Get comprehensive details about a specific flight:
 
 ```json
 {
@@ -180,15 +254,25 @@ This is particularly useful for:
 }
 ```
 
+**Response includes:**
+- Complete schedule and timing
+- Aircraft type and configuration
+- In-flight amenities (WiFi, entertainment, meals)
+- Baggage allowances
+- Seat availability
+- Refund and change policies
+
 ### Search Hotels
+
+Search for hotels with extensive filters:
 
 ```json
 {
   "name": "search_hotels",
   "arguments": {
     "location": "San Francisco",
-    "checkIn": "2024-03-15",
-    "checkOut": "2024-03-17",
+    "checkIn": "2025-03-15",
+    "checkOut": "2025-03-17",
     "guests": 2,
     "rooms": 1,
     "minPrice": 100,
@@ -199,7 +283,17 @@ This is particularly useful for:
 }
 ```
 
+**Response includes:**
+- Hotel properties with real-time availability
+- Nightly rates and total pricing
+- Guest ratings and review counts
+- Property photos
+- Location and distance information
+- Available amenities
+
 ### Get Hotel Details
+
+Get full property information:
 
 ```json
 {
@@ -210,15 +304,25 @@ This is particularly useful for:
 }
 ```
 
+**Response includes:**
+- Detailed property description
+- Room types and configurations
+- Full amenity list
+- Guest reviews and ratings
+- Nearby attractions
+- Cancellation policies
+
 ### Search Vacation Rentals
+
+Search for vacation homes and apartments:
 
 ```json
 {
   "name": "search_vacation_rentals",
   "arguments": {
     "location": "Miami Beach",
-    "checkIn": "2024-03-15",
-    "checkOut": "2024-03-22",
+    "checkIn": "2025-03-15",
+    "checkOut": "2025-03-22",
     "guests": 4,
     "bedrooms": 2,
     "bathrooms": 2,
@@ -228,17 +332,80 @@ This is particularly useful for:
 }
 ```
 
+**Response includes:**
+- Available vacation rentals
+- Nightly and total pricing
+- Property photos and descriptions
+- Host information
+- Guest reviews
+- House rules and check-in details
+
+## API Integration Details
+
+### SerpAPI Parameters
+
+The server translates MCP tool calls into SerpAPI requests:
+
+**Flight Search:**
+- Engine: `google_flights`
+- Parameters: `departure_id`, `arrival_id`, `outbound_date`, `return_date`, `adults`, `travel_class`, `type`
+- Travel class mapping: economy→1, premium_economy→2, business→3, first→4
+- Type codes: 1=round-trip, 2=one-way, 3=multi-city
+
+**Hotel Search:**
+- Engine: `google_hotels`
+- Parameters: `q`, `check_in_date`, `check_out_date`, `adults`, `currency`, `min_price`, `max_price`, `hotel_class`
+
+**Multi-City:**
+- Uses `multi_city_json` parameter with array of legs
+- Each leg: `{departure_id, arrival_id, date}`
+
+### Response Structure
+
+All responses return structured JSON data from Google with:
+- `best_flights` / `properties` - Top recommended results
+- `other_flights` / `other_options` - Alternative choices
+- `price_insights` - Historical pricing and predictions
+- `search_metadata` - Search parameters and timing
+- `search_parameters` - Echo of request parameters
+
 ## Note on Data
 
-This server currently returns mock data for demonstration purposes. In a production environment, you would integrate with real travel APIs such as:
+This server provides real-time travel data from Google Flights and Google Hotels via SerpAPI. All searches return:
+- Live pricing and availability
+- Actual flight schedules and hotel properties
+- Real guest reviews and ratings
+- Current travel restrictions and policies
 
-- Google Flights API
-- Amadeus Travel APIs
-- Booking.com API
-- Airbnb API
-- Or other travel service providers
+**Important:** This is a browse-only service - no bookings are made. Users should complete their bookings directly with airlines, hotels, or booking platforms.
 
-The mock data structure is designed to be realistic and easily replaceable with real API integrations.
+## Development
+
+### Running Tests
+
+The project includes comprehensive tests with mock data from real SerpAPI responses:
+
+```bash
+# Run all tests
+npm test
+
+# Generate fresh mock data from SerpAPI
+npm run generate-mocks
+```
+
+See [TESTING.md](TESTING.md) for detailed testing documentation.
+
+### Building
+
+```bash
+npm run build
+```
+
+### Watching for Changes
+
+```bash
+npm run watch
+```
 
 ## License
 
