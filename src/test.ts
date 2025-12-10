@@ -42,7 +42,7 @@ server.stdout.on('data', (data) => {
 });
 
 server.stderr.on('data', (data) => {
-  console.error('Server stderr:', data.toString());
+  console.log('[Server Log]:', data.toString().trim());
 });
 
 server.on('close', (code) => {

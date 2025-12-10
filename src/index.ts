@@ -691,9 +691,10 @@ function searchVacationRentals(args: any) {
 function calculateNights(checkIn: string, checkOut: string): number {
   const start = new Date(checkIn);
   const end = new Date(checkOut);
-  const diffTime = Math.abs(end.getTime() - start.getTime());
+  const diffTime = end.getTime() - start.getTime();
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  return diffDays;
+  // Return at least 1 night, even for invalid ranges (mock data handles this gracefully)
+  return Math.max(1, diffDays);
 }
 
 // Main server setup
