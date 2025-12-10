@@ -30,7 +30,13 @@ This server uses **SerpAPI** to fetch real-time data from Google Flights and Goo
 
 ## Installation
 
-### Option 1: From GitHub
+### Option 1: From npm (Recommended)
+
+```bash
+npm install -g @taskingagency/mcp-google-travels
+```
+
+### Option 2: From GitHub
 
 Clone the repository and install dependencies:
 
@@ -41,25 +47,13 @@ npm install
 npm run build
 ```
 
-### Option 2: From npm (if published)
-
-```bash
-npm install -g mcp-google-travels
-```
-
 ### Set Up SerpAPI
 
 You'll need a SerpAPI API key to use this server:
 
 1. Sign up at [serpapi.com](https://serpapi.com)
 2. Get your API key from the dashboard
-3. Create a `.env` file in the project root:
-
-```bash
-SERPAPI_API_KEY=your_serpapi_key_here
-```
-
-Or set it as an environment variable in your Claude Desktop configuration (see below).
+3. Set it as an environment variable in your Claude Desktop configuration (see below)
 
 ## Usage
 
@@ -73,6 +67,40 @@ Add to your Claude Desktop configuration file:
 
 **MacOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 **Windows**: `%APPDATA%/Claude/claude_desktop_config.json`
+
+**Using npm package (Recommended):**
+
+```json
+{
+  "mcpServers": {
+    "google-travels": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@taskingagency/mcp-google-travels"
+      ],
+      "env": {
+        "SERPAPI_API_KEY": "your_serpapi_key_here"
+      }
+    }
+  }
+}
+```
+
+**Or if installed globally:**
+
+```json
+{
+  "mcpServers": {
+    "google-travels": {
+      "command": "mcp-google-travels",
+      "env": {
+        "SERPAPI_API_KEY": "your_serpapi_key_here"
+      }
+    }
+  }
+}
+```
 
 **Using the GitHub repository:**
 

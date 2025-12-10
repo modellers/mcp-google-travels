@@ -1,5 +1,5 @@
 {
-  "name": "mcp-google-travels",
+  "name": "@taskingagency/mcp-google-travels",
   "version": "1.0.0",
   "description": "MCP Server for searching flights, hotels, and vacation rentals",
   "main": "dist/index.js",
@@ -14,16 +14,36 @@
     "generate-mocks": "tsc && node dist/generate-mock-data.js",
     "test": "node --test dist/test/**/*.test.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/modellers/mcp-google-travels.git"
+  },
+  "bugs": {
+    "url": "https://github.com/modellers/mcp-google-travels/issues"
+  },
+  "homepage": "https://github.com/modellers/mcp-google-travels#readme",
   "keywords": [
     "mcp",
+    "model-context-protocol",
     "google",
     "travels",
     "flights",
     "hotels",
-    "vacation-rentals"
+    "vacation-rentals",
+    "serpapi"
   ],
-  "author": "",
+  "author": "Tasking Agency",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "TECHNICAL.md",
+    "LICENSE",
+    ".env.example"
+  ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "dotenv": "^16.3.1"
